@@ -3,6 +3,6 @@
     "csv-parser": "^3.0.0",
     "csv-writer": "^1.6.0",
     "force": "^0.0.3",
-    "playwright": "^1.43.0"
+    "playwright": "^1.52.0"
   }
 }

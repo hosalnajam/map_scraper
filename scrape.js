@@ -1,144 +1,144 @@
 const { chromium } = require("playwright");
 const fs = require("fs");
+
 (async () => {
-    nameSheet = "medical_spas_in_suffolk2.csv";
-    googleUrl =
-        "https://www.google.com/maps/search/medical+spa+in+suffolk+NY,+USA/@40.7294494,-73.8812257,13z/data=!3m1!4b1?entry=ttu";
+    const nameSheet = "charlottesville_marketing_agency.csv";
+    const googleUrl =
+        "https://www.google.com/maps/search/charlottesville+marketing+agency/@38.5349049,-82.7797161,6.42z?entry=ttu&g_ep=EgoyMDI1MDYxNy4wIKXMDSoASAFQAw%3D%3D";
+
     console.time("Execution Time");
-    const browser = await chromium.launch({ headless: true });
-    const page = await browser.newPage();
-    await page.goto(googleUrl);
-    await page.waitForSelector('[jstcache="3"]');
-    const scrollable = await page.$(
-        "xpath=/html/body/div[2]/div[3]/div[8]/div[9]/div/div/div[1]/div[2]/div/div[1]/div/div/div[1]/div[1]"
-    );
-    if (!scrollable) {
-        console.log("Scrollable element not found.");
-        await browser.close();
-        return;
+
+    const browser = await chromium.launch({ headless: false, slowMo: 50 });
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto(googleUrl, { waitUntil: "domcontentloaded" });
+
+    await page.waitForSelector('div[role="feed"]');
+
+    // ✅ Smart Scroll Logic — Wait for new cards each time
+    async function autoScrollListings(page) {
+        const scrollContainer = await page.$('div[role="feed"]');
+        if (!scrollContainer) throw new Error("Scrollable listings container not found");
+
+        let lastCount = 0;
+        let sameCountTimes = 0;
+
+        for (let i = 0; i < 50; i++) {
+            await page.evaluate(el => el.scrollBy(0, 1000), scrollContainer);
+            await page.waitForTimeout(2000); // Give it time to load
+
+            const currentCount = await page.$$eval('div[role="article"]', els => els.length);
+            console.log(`Scroll ${i + 1}: ${currentCount} items loaded.`);
+
+            if (currentCount === lastCount) {
+                sameCountTimes++;
+            } else {
+                sameCountTimes = 0;
+                lastCount = currentCount;
+            }
+
+            if (sameCountTimes >= 5) {
+                console.log("No new items loaded. Scrolling done.");
+                break;
+            }
+        }
     }
-    let endOfList = false;
-    while (!endOfList) {
-        await scrollable.evaluate((node) => node.scrollBy(0, 50000));
-        endOfList = await page.evaluate(() =>
-            document.body.innerText.includes(
-                "You've reached the end of the list"
-            )
-        );
-    }
-    const urls = await page.$$eval("a", (links) =>
-        links
-            .map((link) => link.href)
-            .filter((href) =>
-                href.startsWith("https://www.google.com/maps/place/")
-            )
-    );
+
+    // 🌀 Scroll until all listings load
+    await autoScrollListings(page);
+
+    // 🌍 Extract business URLs
+    const urls = await page.$$eval('a[href*="/maps/place/"]', links => {
+        const seen = new Set();
+        return links
+            .map(a => a.href.split("?")[0])
+            .filter(href => {
+                if (!seen.has(href)) {
+                    seen.add(href);
+                    return true;
+                }
+                return false;
+            });
+    });
+
+    console.log(`Found ${urls.length} business URLs.`);
+
+    // 🛠 Scraping Function
     const scrapePageData = async (url) => {
-        const newPage = await browser.newPage();
-        await newPage.goto(url);
-        await newPage.waitForSelector('[jstcache="3"]');
-        const nameElement = await newPage.$(
-            "xpath=/html/body/div[2]/div[3]/div[8]/div[9]/div/div/div[1]/div[2]/div/div[1]/div/div/div[2]/div/div[1]/div[1]/h1"
-        );
-        let name = nameElement
-            ? await newPage.evaluate(
-                  (element) => element.textContent,
-                  nameElement
-              )
-            : "";
-        name = `"${name}"`;
-        const ratingElement = await newPage.$(
-            "xpath=/html/body/div[2]/div[3]/div[8]/div[9]/div/div/div[1]/div[2]/div/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div[1]/div[2]/span[1]/span[1]"
-        );
-        let rating = ratingElement
-            ? await newPage.evaluate(
-                  (element) => element.textContent,
-                  ratingElement
-              )
-            : "";
-        rating = `"${rating}"`;
-        const reviewsElement = await newPage.$(
-            "xpath=/html/body/div[2]/div[3]/div[8]/div[9]/div/div/div[1]/div[2]/div/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div[1]/div[2]/span[2]/span/span"
-        );
-        let reviews = reviewsElement
-            ? await newPage.evaluate(
-                  (element) => element.textContent,
-                  reviewsElement
-              )
-            : "";
-        reviews = reviews.replace(/\(|\)/g, "");
-        reviews = `"${reviews}"`;
-        const categoryElement = await newPage.$(
-            "xpath=/html/body/div[2]/div[3]/div[8]/div[9]/div/div/div[1]/div[2]/div/div[1]/div/div/div[2]/div/div[1]/div[2]/div/div[2]/span/span/button"
-        );
-        let category = categoryElement
-            ? await newPage.evaluate(
-                  (element) => element.textContent,
-                  categoryElement
-              )
-            : "";
-        category = `"${category}"`;
-        const addressElement = await newPage.$(
-            'button[data-tooltip="Copy address"]'
-        );
-        let address = addressElement
-            ? await newPage.evaluate(
-                  (element) => element.textContent,
-                  addressElement
-              )
-            : "";
-        address = `"${address}"`;
-        const websiteElement =
-            (await newPage.$('a[data-tooltip="Open website"]')) ||
-            (await newPage.$('a[data-tooltip="Open menu link"]'));
-        let website = websiteElement
-            ? await newPage.evaluate(
-                  (element) => element.getAttribute("href"),
-                  websiteElement
-              )
-            : "";
-        website = `"${website}"`;
-        const phoneElement = await newPage.$(
-            'button[data-tooltip="Copy phone number"]'
-        );
-        let phone = phoneElement
-            ? await newPage.evaluate(
-                  (element) => element.textContent,
-                  phoneElement
-              )
-            : "";
-        phone = `"${phone}"`;
-        url = `"${url}"`;
-        await newPage.close();
-        return {
-            name,
-            rating,
-            reviews,
-            category,
-            address,
-            website,
-            phone,
-            url,
-        };
+        try {
+            const newPage = await context.newPage();
+            await newPage.goto(url, { waitUntil: "domcontentloaded" });
+            await newPage.waitForTimeout(3000); // wait for page to settle
+
+            const getText = async (selector) => {
+                try {
+                    const el = await newPage.$(selector);
+                    return el ? (await el.textContent()).trim().replace(/\s+/g, " ") : "";
+                } catch {
+                    return "";
+                }
+            };
+
+            const getAttr = async (selector, attr) => {
+                try {
+                    const el = await newPage.$(selector);
+                    return el ? await el.getAttribute(attr) : "";
+                } catch {
+                    return "";
+                }
+            };
+
+            const name = `"${await getText("h1")}"`;
+            const rating = `"${await getText('[aria-label*="stars"]')}"`;
+            const reviews = `"${(await getText('[role="img"] + span'))?.replace(/\(|\)/g, "")}"`;
+            const category = `"${await getText('[class*="fontBodyMedium"] span')}"`;
+            const address = `"${await getText('[data-item-id*="address"]')}"`;
+            const website = `"${await getAttr('a[data-item-id*="authority"]', "href")}"`;
+            const phone = `"${await getText('[data-tooltip*="phone"]')}"`;
+
+            await newPage.close();
+
+            return {
+                name,
+                rating,
+                reviews,
+                category,
+                address,
+                website,
+                phone,
+                url: `"${url}"`,
+            };
+        } catch (err) {
+            console.error("Scrape error for:", url, err);
+            return {
+                name: '""',
+                rating: '""',
+                reviews: '""',
+                category: '""',
+                address: '""',
+                website: '""',
+                phone: '""',
+                url: `"${url}"`,
+            };
+        }
     };
-    const batchSize = 5;
+
+    // 📦 Scrape URLs in batches
     const results = [];
+    const batchSize = 5;
     for (let i = 0; i < urls.length; i += batchSize) {
-        const batchUrls = urls.slice(i, i + batchSize);
-        const batchResults = await Promise.all(
-            batchUrls.map((url) => scrapePageData(url))
-        );
+        const batch = urls.slice(i, i + batchSize);
+        const batchResults = await Promise.all(batch.map(scrapePageData));
         results.push(...batchResults);
-        console.log(`Batch ${i / batchSize + 1} completed.`);
+        console.log(`Processed batch ${i / batchSize + 1}`);
     }
-    const csvHeader =
-        "Name,Rating,Reviews,Category,Address,Website,Phone,Url\n";
-    const csvRows = results
-        .map(
-            (r) =>
-                `${r.name},${r.rating},${r.reviews},${r.category},${r.address},${r.website},${r.phone},${r.url}`
-        )
-        .join("\n");
+
+    // 📝 Save to CSV
+    const csvHeader = "Name,Rating,Reviews,Category,Address,Website,Phone,Url\n";
+    const csvRows = results.map(r =>
+        `${r.name},${r.rating},${r.reviews},${r.category},${r.address},${r.website},${r.phone},${r.url}`
+    ).join("\n");
+
     fs.writeFileSync(nameSheet, csvHeader + csvRows);
     await browser.close();
     console.timeEnd("Execution Time");

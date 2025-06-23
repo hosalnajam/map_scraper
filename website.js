@@ -2,7 +2,7 @@ const playwright = require("playwright");
 const csv = require("csv-parser");
 const fs = require("fs");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
-const baseURL = "homecare_in_Nassau_County.csv";
+const baseURL = "israeljewelry.csv";
 const delayTime = 1000;
 const emailFilter = [
     "@sentry-next.wixpress.com",
